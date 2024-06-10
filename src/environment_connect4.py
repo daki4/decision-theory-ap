@@ -1,4 +1,3 @@
-from typing import List
 import numpy as np
 import gymnasium as gym
 from gymnasium.spaces import Box, Discrete, Tuple
@@ -80,12 +79,6 @@ class Connect4Env(gym.Env):
         return winner, reward_vector
 
     def clone(self):
-        """
-        Creates a deep copy of the game state.
-        NOTE: it is _really_ important that a copy is used during simulations
-              Because otherwise MCTS would be operating on the real game board.
-        :returns: deep copy of this GameState
-        """
         st = Connect4Env(width=self.width, height=self.height)
         st.current_player = self.current_player
         st.winner = self.winner
