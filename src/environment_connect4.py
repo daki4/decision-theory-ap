@@ -36,6 +36,9 @@ class Connect4Env(gym.Env):
         self.winner = None
         return self.get_player_observations()
 
+    # -1 - empty
+    #  0 - one player
+    #  1 - another player
     def filter_observation_player_perspective(self, player: int):
         opponent = 0 if player == 1 else 1
         # One hot channel encoding of the board
@@ -126,41 +129,54 @@ class Connect4Env(gym.Env):
 
         return False
     
-    def move_random_token(self):
-        # choose from where to take a token
-        # check if the thing I want to take is an empty spot
-        # choose where to put a token
-        # take the thing from the first position
-        # overwrite the thing that was in the new position
-        # check if this is a winning combo
-        # if winning pick a new position to put it at
-        # if not winning: overwrite
+    # swaps one random token of player A with another random token of player B 
+    def swap_random_tokens(self):
+        while True:
+            old_col = random.choice(range(self.height))
+            old_row = random.choice(range(self.width))
+            old_tile_val = self.board[old_row][old_col]
+
+            # print("old_col: ", old_col)
+            # print("old_row: ", old_row)
+            # print("old_tile_val: ", old_tile_val)
+
+            if old_tile_val == -1:
+
+                # print("old_tile_val is -1")
+
+                continue
         
-        old_row = random.choice(self.width)
-        old_col = random.choice(self.width)
-    
-        new_row = random.choice(self.width)
-        new_col = random.choice(self.width)
+            new_col = random.choice(range(self.height))
+            new_row = random.choice(range(self.width))
+            new_tile_val = self.board[new_row][new_col]
 
-        if self.board[old_row][old_col] == -1 or self.board[new_row][new_col] == -1:
-            return
-
-        chip_color = self.board[old_row].pop(old_col)
-        self.board[old_row].append(-1)
-
-        if self.does_move_win(x, y, me=chip_color):
-            pass
-            # good
-        else:
-            # pick new
-            pass
-        self.board[new_row][new_col] = chip_color
+            # print("new_col: ", new_col)
+            # print("new_row: ", new_row)
+            # print("new_tile_val: ", new_tile_val)
 
 
+            if new_tile_val == -1 or new_tile_val == old_tile_val:
 
+                # print("new tile val is -1 or same as the other")
 
+                continue
 
+            if self.does_move_win(new_row, new_col, me=old_tile_val):
 
+                # print("move wins")
+
+                continue
+
+            if self.does_move_win(old_row, old_col, me=new_tile_val):
+                
+                # print("move wins")
+
+                continue
+            
+            # print("yeeeeeee")
+
+            self.board[old_row][old_col], self.board[new_row][new_col] = self.board[new_row][new_col], self.board[old_row][old_col]
+            break
 
     def is_on_board(self, x, y):
         return x >= 0 and x < self.width and y >= 0 and y < self.height
