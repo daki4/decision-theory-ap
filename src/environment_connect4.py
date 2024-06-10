@@ -7,12 +7,14 @@ import random
 
 class Connect4Env(gym.Env):
 
-    def __init__(self, width=7, height=6, connect=4):
+    def __init__(self, width=7, height=6, connect=4, pacman_row=2, pacman_column=5):
         self.num_players = 2
 
         self.width = width
         self.height = height
         self.connect = connect
+        self.pacman_row = pacman_row
+        self.pacman_column = pacman_column
 
         player_observation_space = Box(low=-1, high=1,
                                        shape=(self.width, self.height),
@@ -51,7 +53,7 @@ class Connect4Env(gym.Env):
         if not(movecol >= 0 and movecol <= self.width and self.board[movecol][self.height - 1] == -1):
             raise IndexError(f'Invalid move. tried to place a chip on column {movecol} which is already full. Valid moves are: {self.get_moves()}')
         row = self.height - 1
-        while row >= 0 and self.board[movecol][row] == -1:
+        while row >= 0 and self.board[movecol][row] == -1: # or == 2
             row -= 1
 
         row += 1
@@ -63,8 +65,100 @@ class Connect4Env(gym.Env):
 
         info = {'legal_actions': self.get_moves(),
                 'current_player': self.current_player}
+        
+        # move_pacman() with some probability (eg, 20%)
+
         return self.get_player_observations(), reward_vector, \
                self.winner is not None, info
+
+    def move_pacman(self):
+        while True:
+            action = [0, 0]
+            rnd = np.random.rand()
+            if rnd < 1/4:
+                action = [0, 1]
+            elif rnd < 2/4:
+                action = [0, -1]
+            elif rnd < 3/4:
+                action = [1, 0]
+            else:
+                action = [-1, 0]
+
+            print(action)
+
+            # action = [0, -1]
+
+            if self.is_on_board(self.pacman_column + action[0], self.pacman_row + action[1]):
+                self.board[self.pacman_column][self.pacman_row] = -1
+                
+
+                self.pacman_column += action[0]
+                self.pacman_row += action[1]
+                self.board[self.pacman_column][self.pacman_row] = 2
+                
+                self.render()
+                
+                self.move_tokens_down(action)
+
+                print('yeee')
+
+                self.render()
+                break
+                # bring other tokens down
+
+    def move_tokens_down(self, action):
+        if action != [0, 1]:
+            column_list = []
+            column_list = list(self.board[self.pacman_column - action[0]])
+            empties = [x for x in column_list if x == -1]
+            column_list.remove(-1)
+            column_list.extend(empties)
+            print(column_list)
+            print(empties)
+            self.board[self.pacman_column  - action[0]] = np.array(column_list)
+
+
+        #     row = self.pacman_row + 2 
+            
+        #     while row < self.height and self.board[self.pacman_column][row] != -1:
+        #         self.board[self.pacman_column][row - 1] = self.board[self.pacman_column][row]
+        #         row += 1
+        #         print(row)
+
+        #     self.board[self.pacman_column][row - 1] = -1
+        
+        # elif action in ([1, 0], [-1, 0]):
+            
+        #     column = self.pacman_column - action[0]
+        #     row = 0
+            
+        #     while row < self.height and self.board[column][row] != -1:
+        #         if row >= self.height:
+        #             return
+        #         print(row)
+        #         row += 1
+            
+        #     print(row, 'ehooo')
+        #     row += 1
+            
+        #     while row < self.height:
+        #         self.board[column][row - 1] = self.board[self.pacman_column][row]
+        #         print(row)
+        #         row += 1
+            
+        #     self.board[column][row - 1] = -1
+        
+                
+        
+        
+        # while row >= 0 and self.board[movecol][row] == -1: 
+
+        # while self.board[self.pacman_column][row] != -1:
+
+
+        #     while self.pacman_row >= 0 and self.board[movecol][row] == -1: # or == 2
+        #         row -= 1
+
 
     def check_for_episode_termination(self, movecol, row):
         """
@@ -181,7 +275,7 @@ class Connect4Env(gym.Env):
         s = ""
         for x in range(self.height - 1, -1, -1):
             for y in range(self.width):
-                s += {-1: Fore.WHITE + '.', 0: Fore.RED + 'X', 1: Fore.YELLOW + 'O'}[self.board[y][x]]
+                s += {-1: Fore.WHITE + '.', 0: Fore.RED + 'X', 1: Fore.YELLOW + 'O', 2: Fore.BLUE + 'P'}[self.board[y][x]]
                 s += Fore.RESET
             s += "\n"
         print(s)
