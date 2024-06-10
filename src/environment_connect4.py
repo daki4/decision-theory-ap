@@ -85,6 +85,19 @@ class Connect4Env(gym.Env):
             winner = -1
         return winner, reward_vector
 
+    def clone(self):
+        """
+        Creates a deep copy of the game state.
+        NOTE: it is _really_ important that a copy is used during simulations
+              Because otherwise MCTS would be operating on the real game board.
+        :returns: deep copy of this GameState
+        """
+        st = Connect4Env(width=self.width, height=self.height)
+        st.current_player = self.current_player
+        st.winner = self.winner
+        st.board = np.array([self.board[col][:] for col in range(self.width)])
+        return st
+
     def get_moves(self):
         """
         :returns: array with columns where there is a possible move
