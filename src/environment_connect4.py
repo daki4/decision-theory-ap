@@ -14,12 +14,10 @@ class Connect4Env(gym.Env):
         self.height = height
         self.connect = connect
 
-        player_observation_space = Box(low=0, high=1,
-                                       shape=(self.num_players + 1,
-                                              self.width, self.height),
+        player_observation_space = Box(low=-1, high=1,
+                                       shape=(self.width, self.height),
                                        dtype=np.int32)
-        self.observation_space = Tuple([player_observation_space
-                                        for _ in range(self.num_players)])
+        self.observation_space = player_observation_space
         self.action_space = Tuple([Discrete(self.width) for _ in range(self.num_players)])
 
         self.state_space_size = (self.height * self.width) ** 3
@@ -36,22 +34,15 @@ class Connect4Env(gym.Env):
         self.winner = None
         return self.get_player_observations()
 
-    # -1 - empty
-    #  0 - one player
+    #  0 - empty
+    # -1 - one player
     #  1 - another player
-    def filter_observation_player_perspective(self, player: int):
-        opponent = 0 if player == 1 else 1
-        # One hot channel encoding of the board
-        empty_positions = np.where(self.board == -1, 1, 0)
-        player_chips   = np.where(self.board == player, 1, 0)
-        opponent_chips = np.where(self.board == opponent, 1, 0)
-        return np.array([empty_positions, player_chips, opponent_chips])
-
-    def get_player_observations(self) -> List[np.ndarray]:
-        p1_state = self.filter_observation_player_perspective(0)
-        p2_state = np.array([np.copy(p1_state[0]),
-                             np.copy(p1_state[-1]), np.copy(p1_state[-2])])
-        return [p1_state, p2_state]
+    def get_player_observations(self):
+        transformed_array = np.array([list(map(lambda x: 0 if x == -1 else -1 if x == 0 else 1 if x == 1 else x, row)) for row in self.board])
+    
+        transposed_array =  np.rot90(transformed_array, k=1)
+    
+        return transposed_array
 
     def step(self, movecol):
         """
@@ -87,6 +78,19 @@ class Connect4Env(gym.Env):
         elif self.get_moves() == []:  # A draw has happened
             winner = -1
         return winner, reward_vector
+
+    def clone(self):
+        """
+        Creates a deep copy of the game state.
+        NOTE: it is _really_ important that a copy is used during simulations
+              Because otherwise MCTS would be operating on the real game board.
+        :returns: deep copy of this GameState
+        """
+        st = Connect4Env(width=self.width, height=self.height)
+        st.current_player = self.current_player
+        st.winner = self.winner
+        st.board = np.array([self.board[col][:] for col in range(self.width)])
+        return st
 
     def get_moves(self):
         """
