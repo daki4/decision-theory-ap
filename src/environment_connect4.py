@@ -71,9 +71,12 @@ class Connect4Env(gym.Env):
         return self.get_player_observations(), reward_vector, \
                self.winner is not None, info
 
-    def move_pacman(self):
-        while True: # x  y
-            action = [0, 0]
+    def move_pacman(self, is_random=None):
+        action = [0, 0]
+        while True: # moves row, moves column
+            if is_random != None:
+                action = is_random
+                break
             rnd = np.random.rand()
             if rnd < 1/4:
                 action = [0, 1]
@@ -88,35 +91,55 @@ class Connect4Env(gym.Env):
             # action = [0, -1]
 
             if self.is_on_board(self.pacman_column + action[1], self.pacman_row + action[0]):
-                self.render()
-                self.board[self.pacman_column][self.pacman_row] = -1
-                self.board[self.pacman_column + action[1]][self.pacman_row + action[0]] = 2
-                self.move_tokens_down(action)
-
-
-                self.pacman_column += action[1]
-                self.pacman_row += action[0]
-                
-                print('before')
-                print(action)
-                
-
-                print('yeee')
-
-                print('after')
-                self.render()
                 break
-                # bring other tokens down
+        print('before')
+        self.render()
+        self.board[self.pacman_column][self.pacman_row] = -1
+        self.board[self.pacman_column + action[1]][self.pacman_row + action[0]] = 2
+                                
+        print(action)
+        print(self.board)
+        self.move_tokens_down(action)
+
+        self.pacman_column += action[1]
+        self.pacman_row += action[0]
+
+        print('after')
+        self.render()
+        # bring other tokens down
 
     def move_tokens_down(self, action):
-        if action == [0, 1]:
+        if action == [1, 0]:
+            print('up')
             return
+        if action == [-1, 0]:
+            print('down')
+        if action == [0, 1]:
+            print('right')
+        if action == [0, -1]:
+            print('left')
 
-        column = list(filter(lambda x: x != -1, self.board[self.pacman_column]))
-        column.extend([-1] * (self.height - len(column)))
-        print(column)
+        col =  list(self.board[self.pacman_column])
+        print(self.pacman_column, self.pacman_row)
+        print(col)
+        try:
+            idx = col.index(2)
+        except ValueError:
+            idx = 0
+
+
+        before_pacman = col[:idx]
+        after_pacman = col[idx:]
+        
+        column = list(filter(lambda x: x != -1, after_pacman))
+        column.extend([-1] * (self.height - (len(column) + len(before_pacman))))
+        before_pacman.extend(column)
+        # reference algorithm
+        #column = list(filter(lambda x: x != -1, self.board[self.pacman_column]))
+        #column.extend([-1] * (self.height - len(column)))
+        #print(column)
         # print(empties)
-        self.board[self.pacman_column] = np.array(column)
+        self.board[self.pacman_column] = np.array(before_pacman)
 
 
     def check_for_episode_termination(self, movecol, row):
