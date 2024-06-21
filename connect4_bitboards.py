@@ -1,3 +1,4 @@
+import copy
 import pprint
 import numpy as np
 import gymnasium as gym
@@ -19,13 +20,14 @@ class Connect4BitboardEnv(gym.Env):
         self.reset()
 
     def clone(self):
-        new = Connect4BitboardEnv()
-        new.board = self.board.copy()
-        new.board_height = self.board_height
-        new.board_width = self.board_width
-        new.size = self.size
-        new.current_player = self.current_player
-        new.heights = self.heights
+        new = copy.deepcopy(self)
+        # new = Connect4BitboardEnv()
+        # new.board = self.board.copy()
+        # new.board_height = self.board_height
+        # new.board_width = self.board_width
+        # new.size = self.size
+        # new.current_player = self.current_player
+        # new.heights = self.heights
         return new
         
     def reset(self):
@@ -105,7 +107,7 @@ class Connect4BitboardEnv(gym.Env):
             if done:
                 transition_probabilities[action] = (new_state, 1.0)
             else:
-                opponent_transition_probs = opponent_policy(new_state, self.heights, 1 - current_player)
+                opponent_transition_probs = opponent_policy(self, new_state, self.heights, 1 - current_player)
                 transition_probabilities[action] = (new_state, opponent_transition_probs)
         
         return transition_probabilities

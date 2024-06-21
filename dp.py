@@ -1,13 +1,13 @@
-import random
+import copy
 from connect4_bitboards import *
 from dp_policies import *
 import torch
 
 threshold = 0.0001
 gamma = 0.99
-NUM_EPISODES = 1
+NUM_EPISODES = 5
 
-def policy_evaluation(env: Connect4BitboardEnv, policy, gamma, threshold):
+def policy_evaluation(env: Connect4BitboardEnv, policy, gamma, threshold, opponent_policy):
     V = {}
     max_delta = threshold + 1
     while max_delta > threshold:
@@ -18,12 +18,25 @@ def policy_evaluation(env: Connect4BitboardEnv, policy, gamma, threshold):
             env.current_player = 0  # Set to the player's turn
 
             if env.heights[action] < env.board_height:
-                original_board = env.board.copy()
-                original_heights = env.heights.copy()
-                _, reward, done, _ = env.step(action)
-                new_state = (env.board[0], env.board[1])
-                new_state_idx = (new_state[0] << (env.board_height * env.board_width)) | new_state[1]
-                temp[state] = reward + (gamma * V.get(new_state_idx, 0) if not done else reward)
+                # Generate transition probabilities
+                original_board = copy.deepcopy(env.board)
+                original_heights = copy.deepcopy(env.heights)
+                transition_probs = env.generate_transition_probabilities(env.board, lambda e, s, h, p: opponent_policy(e, s, h, p))
+                
+                value = 0
+                for prob_action, (new_state, prob) in transition_probs.items():
+                    if prob_action == action:
+                        new_state_idx = (new_state[0] << (env.board_height * env.board_width)) | new_state[1]
+                        reward = 1 if env._check_win(new_state[0]) else 0
+                        if isinstance(prob, int):
+                            pr = prob
+                        if isinstance(prob, float):
+                            pr = prob
+                        else:
+                            pr = prob[action]
+                        value += pr * (reward + gamma * V.get(new_state_idx, 0))
+                
+                temp[state] = value
                 max_delta = max(max_delta, abs(V.get(state, 0) - temp[state]))
 
                 # Revert the board state
@@ -32,21 +45,32 @@ def policy_evaluation(env: Connect4BitboardEnv, policy, gamma, threshold):
         V = temp
     return V
 
-def policy_improvement(env, V, gamma):
+def policy_improvement(env, V, gamma, opponent_policy):
     policy = {}
     for state in V.keys():
         env.board = [(state >> env.board_height * env.board_width) & ((1 << (env.board_height * env.board_width)) - 1), state & ((1 << (env.board_height * env.board_width)) - 1)]
         env.current_player = 0  # Set to the player's turn
         best_action_value = -float('inf')
         best_action = None
-        for action in range(env.action_space.n):
+        for action in env.get_possible_moves():
             if env.heights[action] < env.board_height:
-                original_board = env.board[:]
-                original_heights = env.heights[:]
-                _, reward, done, _ = env.step(action)
-                new_state = (env.board[0], env.board[1])
-                new_state_idx = (new_state[0] << (env.board_height * env.board_width)) | new_state[1]
-                action_value = reward + (gamma * V.get(new_state_idx, 0) if not done else reward)
+                original_board = copy.deepcopy(env.board)
+                original_heights = copy.deepcopy(env.heights)
+                transition_probs = env.generate_transition_probabilities(env.board, lambda e, s, h, p: opponent_policy(e, s, h, p))
+                
+                action_value = 0
+                for prob_action, (new_state, prob) in transition_probs.items():
+                    if prob_action == action:
+                        new_state_idx = (new_state[0] << (env.board_height * env.board_width)) | new_state[1]
+                        reward = 1 if env._check_win(new_state[0]) else 0
+                        if isinstance(prob, int):
+                            pr = prob
+                        if isinstance(prob, float):
+                            pr = prob
+                        else:
+                            pr = prob[action]
+                        action_value += pr * (reward + gamma * V.get(new_state_idx, 0))
+                
                 if action_value > best_action_value:
                     best_action_value = action_value
                     best_action = action
@@ -58,7 +82,7 @@ def policy_improvement(env, V, gamma):
             policy[state] = best_action
     return policy
 
-def policy_iteration(env, gamma=0.99, threshold=0.0001):
+def policy_iteration(env, gamma=0.99, threshold=0.0001, opponent_policy=None):
     policy = {}
     # Initialize policy with random actions for all possible states encountered
     initial_policy = {}
@@ -77,8 +101,8 @@ def policy_iteration(env, gamma=0.99, threshold=0.0001):
     policy = initial_policy
 
     while True:
-        V = policy_evaluation(env, policy, gamma=gamma, threshold=threshold)
-        new_policy = policy_improvement(env, V, gamma=gamma)
+        V = policy_evaluation(env, policy, gamma=gamma, threshold=threshold, opponent_policy=opponent_policy)
+        new_policy = policy_improvement(env, V, gamma=gamma, opponent_policy=opponent_policy)
         if new_policy == policy:
             return V, new_policy
         policy = new_policy
@@ -144,13 +168,20 @@ def run_episode(env, policy_to_play, opponent_policy):
         if done:
             print(current_player, action, state)
     return total_reward, policy_to_play
+g_opponent_policy = minimax_opponent_policy
+overall_winrate = []
+runtime = 0
 while True:
-    V_optimal, optimal_policy = policy_iteration(env)
+    runtime += 1
+    env.reset()
+    V_optimal, optimal_policy = policy_iteration(env, opponent_policy=random_opponent_policy)
     total_reward = []
     for n in range(NUM_EPISODES):
         reward, policy = run_episode(env, optimal_policy, minimax_opponent_policy)
         total_reward.append(reward)
     print(f"Success rate over {NUM_EPISODES} episodes: {sum(total_reward) * 100 / NUM_EPISODES}%")
+    overall_winrate.append(sum(total_reward) * 100 / NUM_EPISODES)
+    print(sum(overall_winrate) / runtime)
     with open(f'optimal_policy_dp.json', 'w') as f:
         import json
         json.dump(list(zip(total_reward, policy.items())), f)
