@@ -1,12 +1,13 @@
+from functools import lru_cache
 import numpy as np
 
 from connect4_bitboards import Connect4BitboardEnv
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 # Example opponent policy: Random move
-def random_opponent_policy(env, state, heights, current_player, *args, **kwargs):
-    valid_actions = [col for col in range(7) if heights[col] < 6]
+def random_opponent_policy(env: Connect4BitboardEnv, state, heights, current_player, *args, **kwargs):
+    valid_actions = [col for col in range(env.board_width) if heights[col] < env.board_height]
     if not valid_actions:
         return 0.0
 
@@ -15,7 +16,7 @@ def random_opponent_policy(env, state, heights, current_player, *args, **kwargs)
     return action_probs
 
 
-def bitboard_to_list(bitboard, board_height=6, board_width=7):
+def bitboard_to_list(bitboard, board_height, board_width):
     board_list = [[0 for _ in range(board_width)] for _ in range(board_height)]
     for col in range(board_width):
         for row in range(board_height):
@@ -37,7 +38,7 @@ def evaluate_window(window, piece):
         score -= 4
     return score
 
-def score_position(bitboard, piece, board_height=6, board_width=7):
+def score_position(bitboard, piece, board_height, board_width):
     score = 0
     board_list = bitboard_to_list(bitboard, board_height, board_width)
     opp_piece = 1 if piece == 2 else 2
@@ -75,15 +76,20 @@ def score_position(bitboard, piece, board_height=6, board_width=7):
 
     return score
 
-def evaluate_board(env, state, current_player):
+def cache(user_function, /):
+    'Simple lightweight unbounded cache.  Sometimes called "memoize".'
+    return lru_cache(maxsize=8192)(user_function)
+
+@cache
+def evaluate_board(env: Connect4BitboardEnv, state, current_player):
     if env._check_win(state[0]):
         return 10000000 if current_player == 0 else -100000
     if env._check_win(state[1]):
         return 10000000 if current_player == 1 else -100000
     piece = 1 if current_player == 1 else 2
     opp_piece = 1 if piece == 2 else 2
-    score = score_position(state[current_player], piece)
-    score -= score_position(state[1 - current_player], opp_piece)
+    score = score_position(state[current_player], piece, env.board_height, env.board_width)
+    score -= score_position(state[1 - current_player], opp_piece, env.board_height, env.board_width)
     return score
 
 def minimax(env, depth, alpha=-np.inf, beta=np.inf, maximizing_player=False):
@@ -126,41 +132,45 @@ def minimax(env, depth, alpha=-np.inf, beta=np.inf, maximizing_player=False):
 
         return min_eval
 
+def evaluate_action(action, env, depth, maximizing_player):
+    new_env = env.clone()
+    try:
+        new_env.step(action)
+    except ValueError:
+        return action, -np.inf if maximizing_player else np.inf
 
-def minimax_opponent_policy(envv, state, heights, current_player, depth=6):
+    move_value = minimax(new_env, depth - 1, alpha=-np.inf, beta=np.inf, maximizing_player=not maximizing_player)
+    return action, move_value
+
+def minimax_opponent_policy(envv, state, heights, current_player, depth=2, orig_interface=False):
     best_action = None
     env = envv.clone()
-    best_value = -np.inf if env.current_player == 1 else np.inf  # Adjust for player 1
+    best_value = -np.inf if env.current_player == current_player else np.inf  # Adjust for player 1
+    maximizing_player = (env.current_player == current_player)
+    weights = {}
+    
+    with ProcessPoolExecutor() as executor:
+        futures = [executor.submit(evaluate_action, action, env, depth, maximizing_player) for action in env.get_possible_moves()]
+        for future in as_completed(futures):
+            action, move_value = future.result()
+            weights[action] = move_value
+            if (maximizing_player and move_value > best_value) or (not maximizing_player and move_value < best_value):
+                best_value = move_value
+                best_action = action
 
-    for action in env.get_possible_moves():
-        new_env = env.clone()
-        try:
-            new_env.step(action)
-        except ValueError:
-            continue
+            # Debugging statement
+            # print(f"Action: {action}, Move Value: {move_value}, Best Value: {best_value}, Best Action: {best_action}")
 
-        move_value = minimax(
-            new_env,
-            depth - 1,
-            alpha=-np.inf,
-            beta=np.inf,
-            maximizing_player=(env.current_player == 1),
-        )
+    # print(f"Move Taken: {action}")
+    if not orig_interface:
+        action_probs = {
+            action: (0.0, weights.get(action, -1000000000000)) for action in range(env.board_width)
+        }  # Ensure range matches the board width
+    else:
+        action_probs = {
+            action: 0.0 for action in range(env.board_width)
+        }  # Ensure range matches the board width
 
-        if (env.current_player == 1 and move_value > best_value) or (
-            env.current_player == 0 and move_value < best_value
-        ):
-            best_value = move_value
-            best_action = action
-
-        # Debugging statement
-        print(
-            f"Action: {action}, Move Value: {move_value}, Best Value: {best_value}, Best Action: {best_action}, State: {state}"
-        )
-    print(f"Move Taken: {action}")
-    action_probs = {
-        action: 0.0 for action in range(env.board_width)
-    }  # Ensure range matches the board width
     if best_action is not None:
         action_probs[best_action] = 1.0
 
@@ -186,7 +196,7 @@ def play_human_vs_minimax():
                     print("Invalid move. Try again.")
         else:  # Minimax player
             print("Minimax is thinking...")
-            minimax_action = minimax_opponent_policy(env, env.board, env.heights, env.current_player, depth=6)
+            minimax_action = minimax_opponent_policy(env, env.board, env.heights, env.current_player, depth=6, orig_interface=True)
             action = max(minimax_action, key=minimax_action.get)
             env.step(action)
 

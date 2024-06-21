@@ -5,7 +5,7 @@ import torch
 
 threshold = 0.0001
 gamma = 0.99
-NUM_EPISODES = 5
+NUM_EPISODES = 2000
 
 def policy_evaluation(env: Connect4BitboardEnv, policy, gamma, threshold, opponent_policy):
     V = {}
@@ -28,9 +28,14 @@ def policy_evaluation(env: Connect4BitboardEnv, policy, gamma, threshold, oppone
                     if prob_action == action:
                         new_state_idx = (new_state[0] << (env.board_height * env.board_width)) | new_state[1]
                         reward = 1 if env._check_win(new_state[0]) else 0
-                        if isinstance(prob, int):
+                        if isinstance(prob, dict):
+                            if isinstance(prob[action], tuple):
+                                pr = prob[action][1]
+                            else:
+                                pr = prob[action]
+                        elif isinstance(prob, int):
                             pr = prob
-                        if isinstance(prob, float):
+                        elif isinstance(prob, float):
                             pr = prob
                         else:
                             pr = prob[action]
@@ -63,9 +68,14 @@ def policy_improvement(env, V, gamma, opponent_policy):
                     if prob_action == action:
                         new_state_idx = (new_state[0] << (env.board_height * env.board_width)) | new_state[1]
                         reward = 1 if env._check_win(new_state[0]) else 0
-                        if isinstance(prob, int):
+                        if isinstance(prob, dict):
+                            if isinstance(prob[action], tuple):
+                                pr = prob[action][1]
+                            else:
+                                pr = prob[action]
+                        elif isinstance(prob, int):
                             pr = prob
-                        if isinstance(prob, float):
+                        elif isinstance(prob, float):
                             pr = prob
                         else:
                             pr = prob[action]
@@ -82,7 +92,7 @@ def policy_improvement(env, V, gamma, opponent_policy):
             policy[state] = best_action
     return policy
 
-def policy_iteration(env, gamma=0.99, threshold=0.0001, opponent_policy=None):
+def policy_iteration(env, gamma=0.95, threshold=0.00001, opponent_policy=None):
     policy = {}
     # Initialize policy with random actions for all possible states encountered
     initial_policy = {}
@@ -157,7 +167,7 @@ def run_episode(env, policy_to_play, opponent_policy):
             # Ensure the action is valid
             policy_to_play[state_idx] = action
         else:  # opponent's turn
-            action_probs = opponent_policy(env.clone(), state, env.heights, current_player)
+            action_probs = opponent_policy(env.clone(), state, env.heights, current_player, orig_interface=True)
             if sum(list(action_probs.values())) != 1:
                 action = action = max(action_probs, key=action_probs.get)
             else:
@@ -166,7 +176,7 @@ def run_episode(env, policy_to_play, opponent_policy):
         if current_player == 0:
             total_reward += reward
         if done:
-            print(current_player, action, state)
+            print(f'player: {current_player}, reward: {reward}, action: {action}, state: {state}')
     return total_reward, policy_to_play
 g_opponent_policy = minimax_opponent_policy
 overall_winrate = []
@@ -175,12 +185,13 @@ while True:
     runtime += 1
     env.reset()
     V_optimal, optimal_policy = policy_iteration(env, opponent_policy=random_opponent_policy)
+    print(optimal_policy)
     total_reward = []
-    for n in range(NUM_EPISODES):
+    for n in range(5):
         reward, policy = run_episode(env, optimal_policy, minimax_opponent_policy)
         total_reward.append(reward)
-    print(f"Success rate over {NUM_EPISODES} episodes: {sum(total_reward) * 100 / NUM_EPISODES}%")
-    overall_winrate.append(sum(total_reward) * 100 / NUM_EPISODES)
+    print(f"Success rate over {5} episodes: {sum(total_reward) * 100 / 5}%")
+    overall_winrate.append(sum(total_reward) * 100 / 5)
     print(sum(overall_winrate) / runtime)
     with open(f'optimal_policy_dp.json', 'w') as f:
         import json

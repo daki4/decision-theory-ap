@@ -47,6 +47,7 @@ class Connect4BitboardEnv(gym.Env):
         done = self._check_win(self.board[self.current_player])
         reward = 1 if done else 0
         
+        # Tie
         if not done and all(h == self.board_height for h in self.heights):
             done = True
             reward = 0.5
