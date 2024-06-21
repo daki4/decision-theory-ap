@@ -1,93 +1,206 @@
-
 import numpy as np
 
 from connect4_bitboards import Connect4BitboardEnv
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 # Example opponent policy: Random move
 def random_opponent_policy(env, state, heights, current_player, *args, **kwargs):
     valid_actions = [col for col in range(7) if heights[col] < 6]
     if not valid_actions:
         return 0.0
-    
+
     # Uniform random policy for the opponent
     action_probs = {action: 1 / len(valid_actions) for action in valid_actions}
     return action_probs
 
-def minimax(env, state, heights, current_player, depth, alpha=-np.inf, beta=np.inf, maximizing_player=True):
-    env.board = state
-    env.heights = heights.copy()
-    env.current_player = current_player
 
-    if depth == 0 or env._check_win(state[0]) or env._check_win(state[1]):
-        if env._check_win(state[0]):
-            return 1 if maximizing_player else -1
-        if env._check_win(state[1]):
-            return -1 if maximizing_player else 1
-        return 0  # Draw or depth limit reached
+def bitboard_to_list(bitboard, board_height=6, board_width=7):
+    board_list = [[0 for _ in range(board_width)] for _ in range(board_height)]
+    for col in range(board_width):
+        for row in range(board_height):
+            pos = col * (board_height + 1) + row
+            if (bitboard >> pos) & 1:
+                board_list[row][col] = 1
+    return board_list
+
+def evaluate_window(window, piece):
+    score = 0
+    opp_piece = 1 if piece == 2 else 2
+    if window.count(piece) == 4:
+        score += 100
+    elif window.count(piece) == 3 and window.count(0) == 1:
+        score += 5
+    elif window.count(piece) == 2 and window.count(0) == 2:
+        score += 2
+    if window.count(opp_piece) == 3 and window.count(0) == 1:
+        score -= 4
+    return score
+
+def score_position(bitboard, piece, board_height=6, board_width=7):
+    score = 0
+    board_list = bitboard_to_list(bitboard, board_height, board_width)
+    opp_piece = 1 if piece == 2 else 2
+
+    # Score center column
+    center_array = [board_list[r][board_width//2] for r in range(board_height)]
+    center_count = center_array.count(piece)
+    score += center_count * 3
+
+    # Score Horizontal
+    for r in range(board_height):
+        row_array = board_list[r]
+        for c in range(board_width - 3):
+            window = row_array[c:c+4]
+            score += evaluate_window(window, piece)
+
+    # Score Vertical
+    for c in range(board_width):
+        col_array = [board_list[r][c] for r in range(board_height)]
+        for r in range(board_height - 3):
+            window = col_array[r:r+4]
+            score += evaluate_window(window, piece)
+
+    # Score positive sloped diagonal
+    for r in range(board_height - 3):
+        for c in range(board_width - 3):
+            window = [board_list[r+i][c+i] for i in range(4)]
+            score += evaluate_window(window, piece)
+
+    # Score negative sloped diagonal
+    for r in range(board_height - 3):
+        for c in range(board_width - 3):
+            window = [board_list[r+3-i][c+i] for i in range(4)]
+            score += evaluate_window(window, piece)
+
+    return score
+
+def evaluate_board(env, state, current_player):
+    if env._check_win(state[0]):
+        return 10000000 if current_player == 0 else -100000
+    if env._check_win(state[1]):
+        return 10000000 if current_player == 1 else -100000
+    piece = 1 if current_player == 1 else 2
+    opp_piece = 1 if piece == 2 else 2
+    score = score_position(state[current_player], piece)
+    score -= score_position(state[1 - current_player], opp_piece)
+    return score
+
+def minimax(env, depth, alpha=-np.inf, beta=np.inf, maximizing_player=False):
+    current_player = env.current_player
+    state = env._get_obs()
+
+    if (
+        depth == 0
+        or env._check_win(state[0])
+        or env._check_win(state[1])
+        or all(h >= env.board_height for h in env.heights)
+    ):
+        return evaluate_board(env, state, current_player)
 
     if maximizing_player:
         max_eval = -np.inf
         for action in env.get_possible_moves():
-            if heights[action] >= env.board_height:  # Check for full columns
-                continue
+            new_env = env.clone()
+            new_env.step(action)
 
-            new_board = list(state)
-            new_heights = heights.copy()
-            move = 1 << (action * (env.board_height + 1) + new_heights[action])
-            new_board[current_player] ^= move
-            new_heights[action] += 1
-
-            eval = minimax(env, new_board, new_heights, 1 - current_player, depth - 1, alpha, beta, False)
+            eval = minimax(new_env, depth - 1, alpha, beta, False)
             max_eval = max(max_eval, eval)
             alpha = max(alpha, eval)
 
-            if beta <= alpha:
+            if alpha >= beta:
                 break
         return max_eval
     else:
         min_eval = np.inf
         for action in env.get_possible_moves():
-            if heights[action] >= env.board_height:  # Check for full columns
-                continue
+            new_env = env.clone()
+            new_env.step(action)
 
-            new_board = list(state)
-            new_heights = heights.copy()
-            move = 1 << (action * (env.board_height + 1) + new_heights[action])
-            new_board[current_player] ^= move
-            new_heights[action] += 1
-
-            eval = minimax(env, new_board, new_heights, 1 - current_player, depth - 1, alpha, beta, True)
+            eval = minimax(new_env, depth - 1, alpha, beta, True)
             min_eval = min(min_eval, eval)
             beta = min(beta, eval)
 
             if beta <= alpha:
                 break
-        
+
         return min_eval
 
-def minimax_opponent_policy(env, state, heights, current_player, depth=10):
+
+def minimax_opponent_policy(envv, state, heights, current_player, depth=6):
     best_action = None
-    best_value = -np.inf if current_player == 0 else np.inf
-    new_board = env
+    env = envv.clone()
+    best_value = -np.inf if env.current_player == 1 else np.inf  # Adjust for player 1
 
     for action in env.get_possible_moves():
-        if heights[action] >= env.board_height:  # Check for full columns
+        new_env = env.clone()
+        try:
+            new_env.step(action)
+        except ValueError:
             continue
 
-        new_board = list(state)
-        new_heights = heights.copy()
-        move = 1 << (action * (env.board_height + 1) + new_heights[action])
-        new_board[current_player] ^= move
-        new_heights[action] += 1
+        move_value = minimax(
+            new_env,
+            depth - 1,
+            alpha=-np.inf,
+            beta=np.inf,
+            maximizing_player=(env.current_player == 1),
+        )
 
-        move_value = minimax(env, new_board, new_heights, 1 - current_player, depth - 1, alpha=-np.inf, beta=np.inf, maximizing_player=(current_player == 0))
-
-        if (current_player == 0 and move_value > best_value) or (current_player == 1 and move_value < best_value):
+        if (env.current_player == 1 and move_value > best_value) or (
+            env.current_player == 0 and move_value < best_value
+        ):
             best_value = move_value
             best_action = action
 
-    action_probs = {action: 0.0 for action in range(env.board_width)}  # Ensure range matches the board width
+        # Debugging statement
+        print(
+            f"Action: {action}, Move Value: {move_value}, Best Value: {best_value}, Best Action: {best_action}, State: {state}"
+        )
+    print(f"Move Taken: {action}")
+    action_probs = {
+        action: 0.0 for action in range(env.board_width)
+    }  # Ensure range matches the board width
     if best_action is not None:
         action_probs[best_action] = 1.0
 
     return action_probs
+
+
+def play_human_vs_minimax():
+    env = Connect4BitboardEnv()
+    state = env.reset()
+    env.render()
+
+    while True:
+        if env.current_player == 0:  # Human player
+            valid_move = False
+            while not valid_move:
+                try:
+                    human_action = int(input("Enter your move (0-6): "))
+                    if human_action not in env.get_possible_moves():
+                        raise ValueError
+                    env.step(human_action)
+                    valid_move = True
+                except ValueError:
+                    print("Invalid move. Try again.")
+        else:  # Minimax player
+            print("Minimax is thinking...")
+            minimax_action = minimax_opponent_policy(env, env.board, env.heights, env.current_player, depth=6)
+            action = max(minimax_action, key=minimax_action.get)
+            env.step(action)
+
+        env.render()
+
+        if env._check_win(env.board[0]):
+            print("Player 0 (Human) wins!")
+            break
+        if env._check_win(env.board[1]):
+            print("Player 1 (Minimax) wins!")
+            break
+        if all(h == env.board_height for h in env.heights):
+            print("It's a draw!")
+            break
+
+# Start the game
+# play_human_vs_minimax()
