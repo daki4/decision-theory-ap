@@ -142,7 +142,7 @@ def evaluate_action(action, env, depth, maximizing_player):
     move_value = minimax(new_env, depth - 1, alpha=-np.inf, beta=np.inf, maximizing_player=not maximizing_player)
     return action, move_value
 
-def minimax_opponent_policy(envv, state, heights, current_player, depth=2, orig_interface=False):
+def minimax_opponent_policy(envv, state, heights, current_player, depth=6, orig_interface=False):
     best_action = None
     env = envv.clone()
     best_value = -np.inf if env.current_player == current_player else np.inf  # Adjust for player 1
@@ -167,6 +167,7 @@ def minimax_opponent_policy(envv, state, heights, current_player, depth=2, orig_
             action: (0.0, weights.get(action, -1000000000000)) for action in range(env.board_width)
         }  # Ensure range matches the board width
     else:
+        # print(weights)
         action_probs = {
             action: 0.0 for action in range(env.board_width)
         }  # Ensure range matches the board width
@@ -213,4 +214,5 @@ def play_human_vs_minimax():
             break
 
 # Start the game
-# play_human_vs_minimax()
+if __name__ == '__main__':
+    play_human_vs_minimax()

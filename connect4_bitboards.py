@@ -7,8 +7,8 @@ from gymnasium import spaces
 class Connect4BitboardEnv(gym.Env):
     def __init__(self):
         super(Connect4BitboardEnv, self).__init__()
-        self.board_height = 6
-        self.board_width = 7
+        self.board_height = 4
+        self.board_width = 4
         self.size = self.board_height * self.board_width
         
         self.observation_space = spaces.Tuple((
